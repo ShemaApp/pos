@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Inventario</title>
+<meta name="theme-color" content="#094F4B" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React sin build: UMD + Babel standalone -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Lector de código de barras / QR por cámara -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- Generador visual de barras para impresión de etiquetas -->
+<script src="https://unpkg.com/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<!-- Firebase (compat): solo se usa si js/firebase-config.js pone FIREBASE_HABILITADO en true.
+     Si sigues en modo local (IndexedDB), estos scripts cargan pero nunca se invocan. -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+
+<script src="js/firebase-config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/permisos.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/barcode.js"></script>
+<script src="js/db.js"></script>
+<script src="js/movimientos.js"></script>
+
+<script>
+// Se transpila manualmente (en vez de dejar que Babel escanee <script type="text/babel">)
+// para fijar explícitamente runtime clásico (React.createElement) y sourceType script.
+// Así no depende de qué configuración traiga por defecto la versión de Babel del CDN,
+// que en versiones recientes usa el "automatic runtime" (inyecta import — inválido aquí).
+(async function () {
+  const modulos = [
+    'js/VoiceInput.js',
+    'js/Scanner.js',
+    'js/Etiquetas.js',
+    'js/Configuracion.js',
+    'js/Inventario.js',
+    'js/Clientes.js',
+    'js/Creditos.js',
+    'js/Ventas.js',
+    'js/Reportes.js',
+    'js/App.js',
+  ];
+  for (const ruta of modulos) {
+    const codigo = await fetch(ruta).then((r) => r.text());
+    const transformado = Babel.transform(codigo, {
+      presets: [['react', { runtime: 'classic' }]],
+      sourceType: 'script',
+      filename: ruta,
+    }).code;
+    (0, eval)(transformado);
+  }
+})();
+</script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
