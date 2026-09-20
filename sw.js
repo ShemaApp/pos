@@ -1,4 +1,4 @@
-const CACHE = 'inventario-v8';
+const CACHE = 'inventario-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -20,6 +20,7 @@ const ASSETS = [
   './js/Creditos.js',
   './js/Ventas.js',
   './js/Reportes.js',
+  './js/Empresa.js',
   './js/App.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

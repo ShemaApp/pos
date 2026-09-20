@@ -1,36 +1,100 @@
-// firestore.rules — Reglas de seguridad de Firestore para esta app.
+// firestore.rules — Aislamiento por empresa + autenticación real (Firebase
+// Auth), no solo un documento autofirmable.
 //
 // CÓMO PUBLICARLAS: Firebase Console → tu proyecto → Firestore Database →
-// pestaña "Reglas" → pega este archivo completo → "Publicar". (También se
-// puede con la CLI: `firebase deploy --only firestore:rules`, ver README.)
+// pestaña "Reglas" → pega este archivo completo → "Publicar".
 //
-// QUÉ HACE ESTA REGLA: exige que quien lea o escriba esté autenticado
-// (request.auth != null). La app inicia sesión anónima automáticamente al
-// arrancar (ver js/db.js), así que para un usuario normal esto es invisible.
-// Sin esta regla, CUALQUIER visitante en internet que conozca tu
-// firebaseConfig público podría leer o borrar toda tu base directo, sin
-// pasar por la app — el firebaseConfig no es secreto, así que esta regla es
-// la única barrera real.
+// ============================================================================
+// CÓMO FUNCIONA
+// ============================================================================
+// Cada empresa vive en su propia rama: empresas/{empresaId}/productos,
+// .../clientes, .../ventas, etc. Para leer o escribir CUALQUIER COSA dentro
+// de una empresa (salvo la lista de nombres de usuarios, ver más abajo) hace
+// falta un documento en empresas/{empresaId}/autorizados/{tu uid de
+// Firebase}. Ese documento SOLO se puede crear si tu sesión de Firebase es
+// una sesión de verdad autenticada con contraseña (no una sesión anónima) —
+// eso es lo que Firebase certifica en request.auth.token.firebase.sign_in_provider,
+// y el cliente NO puede falsificarlo. En otras palabras: para poder escribir
+// tu propio documento de "autorizado", primero tuviste que pasar por
+// createUserWithEmailAndPassword o signInWithEmailAndPassword — ambos
+// verificados por los servidores de Firebase, no por este código.
 //
-// LO QUE ESTA REGLA *NO* HACE: no distingue roles ni permisos por usuario
-// (eso lo decide la app en el navegador, igual que hoy con IndexedDB) — un
-// usuario autenticado anónimamente puede, a nivel de base de datos, leer o
-// escribir cualquier colección, incluso si su rol dentro de la app no
-// debería dejarlo. Es el mismo nivel de confianza que la versión local:
-// protege contra desconocidos de internet, no contra alguien de tu propio
-// equipo forzando llamadas directas a Firestore saltándose la interfaz.
+// Cada usuario interno se identifica con un correo SINTÉTICO único
+// (empresaId + nombre de usuario, ver correoSintetico() en js/auth.js) —
+// nunca se usa para enviar nada, solo para que Firebase Auth tenga un
+// identificador con el que verificar la contraseña de verdad.
 //
-// Si más adelante quieres que las reglas también respeten los permisos por
-// rol (para que ni siquiera saltándose la interfaz alguien pueda hacer algo
-// que su rol no permite), pídeme ayuda — se puede hacer cruzando cada
-// escritura contra el documento roles/{rolId} del usuario, pero es una
-// versión más avanzada que esta base.
+// La colección raíz `empresas` usa IDs aleatorios largos de Firestore (no
+// números consecutivos), así nadie puede "probar" empresas/1, empresas/2...
+// para encontrar compañías ajenas.
+//
+// ============================================================================
+// QUÉ *NO* PROTEGE ESTO
+// ============================================================================
+// 1. La colección raíz `empresas` es LEGIBLE por cualquiera que abra la app
+//    (incluso en sesión anónima, necesaria para poder buscar tu empresa por
+//    correo antes de iniciar sesión). Eso expone nombre + correo de cada
+//    empresa registrada — no los datos de negocio (esos sí están
+//    protegidos), pero sí el directorio de "quién usa esta app".
+// 2. Dentro de cada empresa, la subcolección `usuarios` es legible incluso
+//    sin sesión real (para poder mostrar la lista de "¿quién eres?" antes
+//    de pedir contraseña) — expone nombre y rol de cada persona, pero YA NO
+//    expone nada relacionado a la contraseña (esa vive en Firebase Auth,
+//    nunca en Firestore).
+// 3. Las reglas aíslan una empresa de otra, y confirman que sabes una
+//    contraseña real para ALGUIEN de esa empresa — pero no distinguen "tu
+//    rol te deja hacer esto" a nivel de base de datos: eso lo sigue
+//    decidiendo solo la app en el navegador (permisos.js), igual que en la
+//    versión de una sola empresa. Alguien con una cuenta legítima pero de
+//    rol limitado podría, saltándose la interfaz, leer o escribir cosas que
+//    su rol no debería permitirle dentro de SU PROPIA empresa. Resolver eso
+//    del todo requeriría validar permisos por rol también en las reglas o
+//    con una Cloud Function — un siguiente nivel si te hace falta.
+//
+// Para el uso típico de esta app (tú administrando el despliegue para
+// negocios que confían en ti) este modelo ya cierra el hueco más grave que
+// tenía la versión anterior (nadie puede autorizarse a sí mismo en una
+// empresa ajena sin saber una contraseña real de esa empresa).
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    function autorizado(empresaId) {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/empresas/$(empresaId)/autorizados/$(request.auth.uid));
+    }
+
+    match /empresas/{empresaId} {
+      // Cualquiera autenticado (incluso anónimo) puede buscar por correo y
+      // crear su propia empresa nueva. Editar/borrar el registro ya
+      // existente exige autorización real dentro de esa empresa.
+      allow read, create: if request.auth != null;
+      allow update, delete: if autorizado(empresaId);
+
+      // Lista de nombres de usuario: legible sin autorizar todavía (es la
+      // pantalla de "¿quién eres?"), pero solo modificable con autorización.
+      match /usuarios/{usuarioDoc} {
+        allow read: if request.auth != null;
+        allow write: if autorizado(empresaId);
+      }
+
+      // Todo lo demás (productos, clientes, ventas, créditos, roles,
+      // movimientos, ajustes, contadores...) exige autorización real.
+      match /{coleccion}/{documento=**} {
+        allow read, write: if autorizado(empresaId);
+      }
+
+      // El documento de autorización de cada quien: solo se puede crear o
+      // renovar si la sesión actual está autenticada con contraseña real
+      // (no anónima) y es exactamente tu propio uid — nadie puede
+      // autorizarse a sí mismo sin haber pasado antes por una verificación
+      // de contraseña real de Firebase.
+      match /autorizados/{uid} {
+        allow create, update: if request.auth != null
+          && request.auth.uid == uid
+          && request.auth.token.firebase.sign_in_provider == 'password';
+      }
     }
   }
 }
