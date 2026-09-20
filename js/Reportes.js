@@ -212,52 +212,56 @@ function ReportesModule({ permisos }) {
         </div>
       </div>
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Periodo</th>
-            <th>Movimientos</th>
-            <th>Monto</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {grupos.length === 0 ? (
-            <tr><td colSpan={4} className="empty-state">No hay movimientos con estos filtros.</td></tr>
-          ) : (
-            grupos.map((g) => (
-              <React.Fragment key={g.clave}>
-                <tr className="clickable" onClick={() => setGrupoAbierto(grupoAbierto === g.clave ? null : g.clave)}>
-                  <td>{g.clave}</td>
-                  <td>{g.items.length}</td>
-                  <td>{g.tieneMontos ? '$' + window.AppUtils.formatMoney(g.total) : '—'}</td>
-                  <td className="actions-cell">{grupoAbierto === g.clave ? 'Ocultar' : 'Ver'}</td>
-                </tr>
-                {grupoAbierto === g.clave && (
-                  <tr>
-                    <td colSpan={4}>
-                      <table className="data-table nested-table">
-                        <tbody>
-                          {g.items.map((m) => (
-                            <tr key={m.id}>
-                              <td className="mono">{new Date(m.fecha).toLocaleString('es')}</td>
-                              <td>{window.AppMovimientos.MODULOS[m.modulo] || m.modulo}</td>
-                              <td>{(window.AppMovimientos.TIPOS[m.modulo] || {})[m.tipo] || m.tipo}</td>
-                              <td>{m.entidadNombre || '—'}</td>
-                              <td>{typeof m.monto === 'number' ? '$' + window.AppUtils.formatMoney(m.monto) : ''}</td>
-                              <td className="detail-sub">{m.detalle || ''}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </td>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Periodo</th>
+              <th>Movimientos</th>
+              <th>Monto</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {grupos.length === 0 ? (
+              <tr><td colSpan={4} className="empty-state">No hay movimientos con estos filtros.</td></tr>
+            ) : (
+              grupos.map((g) => (
+                <React.Fragment key={g.clave}>
+                  <tr className="clickable" onClick={() => setGrupoAbierto(grupoAbierto === g.clave ? null : g.clave)}>
+                    <td>{g.clave}</td>
+                    <td>{g.items.length}</td>
+                    <td>{g.tieneMontos ? '$' + window.AppUtils.formatMoney(g.total) : '—'}</td>
+                    <td className="actions-cell">{grupoAbierto === g.clave ? 'Ocultar' : 'Ver'}</td>
                   </tr>
-                )}
-              </React.Fragment>
-            ))
-          )}
-        </tbody>
-      </table>
+                  {grupoAbierto === g.clave && (
+                    <tr>
+                      <td colSpan={4}>
+                        <div className="table-scroll">
+                          <table className="data-table nested-table">
+                            <tbody>
+                              {g.items.map((m) => (
+                                <tr key={m.id}>
+                                  <td className="mono">{new Date(m.fecha).toLocaleString('es')}</td>
+                                  <td>{window.AppMovimientos.MODULOS[m.modulo] || m.modulo}</td>
+                                  <td>{(window.AppMovimientos.TIPOS[m.modulo] || {})[m.tipo] || m.tipo}</td>
+                                  <td>{m.entidadNombre || '—'}</td>
+                                  <td>{typeof m.monto === 'number' ? '$' + window.AppUtils.formatMoney(m.monto) : ''}</td>
+                                  <td className="detail-sub">{m.detalle || ''}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

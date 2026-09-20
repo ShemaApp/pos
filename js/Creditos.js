@@ -175,17 +175,19 @@ function CreditoDetalle({ credito, clienteNombre, onVolver, onCancelar, onAbonoR
       </div>
 
       <h4 className="section-title">Movimientos</h4>
-      <table className="data-table">
-        <tbody>
-          {movimientos.map((m, i) => (
-            <tr key={i}>
-              <td>{new Date(m.fecha).toLocaleDateString('es')}</td>
-              <td>{m.tipo}{m.metodo ? ` (${m.metodo})` : ''}</td>
-              <td className="mono">{m.monto >= 0 ? '+' : ''}{window.AppUtils.formatMoney(m.monto)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="table-scroll">
+        <table className="data-table">
+          <tbody>
+            {movimientos.map((m, i) => (
+              <tr key={i}>
+                <td>{new Date(m.fecha).toLocaleDateString('es')}</td>
+                <td>{m.tipo}{m.metodo ? ` (${m.metodo})` : ''}</td>
+                <td className="mono">{m.monto >= 0 ? '+' : ''}{window.AppUtils.formatMoney(m.monto)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <div className="form-actions">
         {credito.estado !== 'liquidado' && credito.estado !== 'cancelado' && (
@@ -310,38 +312,40 @@ function CreditosModule({ contexto, onContextoConsumido, permisos }) {
         {p.crear && <button className="btn-primary" onClick={() => setVista('form')}>+ Nuevo crédito</button>}
       </div>
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Cliente</th>
-            <th>Monto</th>
-            <th>Saldo</th>
-            <th>Estado</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibles.length === 0 ? (
-            <tr><td colSpan={5} className="empty-state">No hay créditos que coincidan.</td></tr>
-          ) : (
-            visibles.map((c) => {
-              const saldo = c.montoOriginal - (c.abonosTotal || 0);
-              const cliente = clientePorId[c.clienteId];
-              return (
-                <tr key={c.id}>
-                  <td className="clickable" onClick={() => { setCreditoActual(c); setVista('detalle'); }}>{cliente ? cliente.nombre : '—'}</td>
-                  <td>${window.AppUtils.formatMoney(c.montoOriginal)}</td>
-                  <td>${window.AppUtils.formatMoney(saldo)}</td>
-                  <td><span className={`badge ${ESTADOS_CREDITO[c.estado].className}`}>{ESTADOS_CREDITO[c.estado].label}</span></td>
-                  <td className="actions-cell">
-                    <button className="btn-link" onClick={() => { setCreditoActual(c); setVista('detalle'); }}>Ver</button>
-                  </td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Monto</th>
+              <th>Saldo</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibles.length === 0 ? (
+              <tr><td colSpan={5} className="empty-state">No hay créditos que coincidan.</td></tr>
+            ) : (
+              visibles.map((c) => {
+                const saldo = c.montoOriginal - (c.abonosTotal || 0);
+                const cliente = clientePorId[c.clienteId];
+                return (
+                  <tr key={c.id}>
+                    <td className="clickable" onClick={() => { setCreditoActual(c); setVista('detalle'); }}>{cliente ? cliente.nombre : '—'}</td>
+                    <td>${window.AppUtils.formatMoney(c.montoOriginal)}</td>
+                    <td>${window.AppUtils.formatMoney(saldo)}</td>
+                    <td><span className={`badge ${ESTADOS_CREDITO[c.estado].className}`}>{ESTADOS_CREDITO[c.estado].label}</span></td>
+                    <td className="actions-cell">
+                      <button className="btn-link" onClick={() => { setCreditoActual(c); setVista('detalle'); }}>Ver</button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

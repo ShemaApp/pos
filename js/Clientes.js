@@ -334,21 +334,23 @@ function ClientesModule({ onIrACreditos, permisos }) {
         )}
       </div>
 
-      <table className="data-table">
-        <tbody>
-          {visibles.length === 0 ? (
-            <tr><td className="empty-state">No hay clientes que coincidan.</td></tr>
-          ) : (
-            visibles.map((c) => (
-              <tr key={c.id}>
-                <td className="clickable" onClick={() => abrirDetalle(c)}>{c.nombre}</td>
-                <td className="mono">{c.telefono || '—'}</td>
-                <td><span className={`badge ${ESTADOS_CLIENTE[c.estado].className}`}>{ESTADOS_CLIENTE[c.estado].label}</span></td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      <div className="table-scroll">
+        <table className="data-table">
+          <tbody>
+            {visibles.length === 0 ? (
+              <tr><td className="empty-state">No hay clientes que coincidan.</td></tr>
+            ) : (
+              visibles.map((c) => (
+                <tr key={c.id}>
+                  <td className="clickable" onClick={() => abrirDetalle(c)}>{c.nombre}</td>
+                  <td className="mono">{c.telefono || '—'}</td>
+                  <td><span className={`badge ${ESTADOS_CLIENTE[c.estado].className}`}>{ESTADOS_CLIENTE[c.estado].label}</span></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

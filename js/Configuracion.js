@@ -57,23 +57,25 @@ function Catalogo({ store, titulo, campos, permisos }) {
         <h3>{titulo}</h3>
         {permisos.crear && <button className="btn-primary btn-sm" onClick={abrirNuevo}>+ Agregar</button>}
       </div>
-      <table className="data-table">
-        <tbody>
-          {items.length === 0 ? (
-            <tr><td colSpan={2} className="empty-state">Sin registros todavía.</td></tr>
-          ) : (
-            items.map((item) => (
-              <tr key={item.id}>
-                <td>{item.nombre}{item.abreviatura ? ` (${item.abreviatura})` : ''}</td>
-                <td className="actions-cell">
-                  {permisos.editar && <button className="btn-link" onClick={() => abrirEditar(item)}>Editar</button>}
-                  {permisos.eliminar && <button className="btn-link danger" onClick={() => eliminar(item)}>Eliminar</button>}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      <div className="table-scroll">
+        <table className="data-table">
+          <tbody>
+            {items.length === 0 ? (
+              <tr><td colSpan={2} className="empty-state">Sin registros todavía.</td></tr>
+            ) : (
+              items.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.nombre}{item.abreviatura ? ` (${item.abreviatura})` : ''}</td>
+                  <td className="actions-cell">
+                    {permisos.editar && <button className="btn-link" onClick={() => abrirEditar(item)}>Editar</button>}
+                    {permisos.eliminar && <button className="btn-link danger" onClick={() => eliminar(item)}>Eliminar</button>}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {editando !== null && (
         <div className="modal-overlay" onClick={() => setEditando(null)}>
@@ -228,20 +230,22 @@ function RolesAdmin({ permisos, onCambio }) {
         <h3>Roles</h3>
         {permisos.crear && <button className="btn-primary btn-sm" onClick={abrirNuevo}>+ Nuevo rol</button>}
       </div>
-      <table className="data-table">
-        <tbody>
-          {roles.map((r) => (
-            <tr key={r.id}>
-              <td>{r.nombre}{r.esSistema && <span className="badge badge-sm badge-ok" style={{ marginLeft: 6 }}>Sistema</span>}</td>
-              <td className="actions-cell">
-                {permisos.editar && !r.esSistema && <button className="btn-link" onClick={() => abrirEditar(r)}>Editar permisos</button>}
-                {permisos.eliminar && !r.esSistema && <button className="btn-link danger" onClick={() => eliminar(r)}>Eliminar</button>}
-                {r.esSistema && <span className="detail-sub">Siempre con todos los permisos</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="table-scroll">
+        <table className="data-table">
+          <tbody>
+            {roles.map((r) => (
+              <tr key={r.id}>
+                <td>{r.nombre}{r.esSistema && <span className="badge badge-sm badge-ok" style={{ marginLeft: 6 }}>Sistema</span>}</td>
+                <td className="actions-cell">
+                  {permisos.editar && !r.esSistema && <button className="btn-link" onClick={() => abrirEditar(r)}>Editar permisos</button>}
+                  {permisos.eliminar && !r.esSistema && <button className="btn-link danger" onClick={() => eliminar(r)}>Eliminar</button>}
+                  {r.esSistema && <span className="detail-sub">Siempre con todos los permisos</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {editando !== null && (
         <div className="modal-overlay" onClick={() => setEditando(null)}>
@@ -358,6 +362,9 @@ function UsuariosAdmin({ permisos, onCambio }) {
     cargar();
   };
 
+  const multiEmpresa = window.AppDB.multiEmpresa;
+  const tieneCredencial = (u) => (multiEmpresa ? !!u.tieneCuenta : !!u.passwordHash);
+
   return (
     <div className="card">
       <div className="card-header">
@@ -368,28 +375,36 @@ function UsuariosAdmin({ permisos, onCambio }) {
         <input type="checkbox" checked={mostrarArchivados} onChange={(e) => setMostrarArchivados(e.target.checked)} />
         Mostrar archivados
       </label>
-      <table className="data-table">
-        <tbody>
-          {visibles.length === 0 ? (
-            <tr><td colSpan={4} className="empty-state">Sin usuarios.</td></tr>
-          ) : (
-            visibles.map((u) => (
-              <tr key={u.id}>
-                <td>{u.nombre}{u.estado === 'archivado' && <span className="badge badge-sm badge-warn" style={{ marginLeft: 6 }}>Archivado</span>}</td>
-                <td>{rolPorId[u.rolId] ? rolPorId[u.rolId].nombre : '—'}</td>
-                <td>{u.passwordHash ? <span className="badge badge-sm badge-ok">Con contraseña</span> : <span className="badge badge-sm badge-warn">Sin contraseña</span>}</td>
-                <td className="actions-cell">
-                  {permisos.editar && <button className="btn-link" onClick={() => abrirEditar(u)}>Editar</button>}
-                  {permisos.editar && u.passwordHash && <button className="btn-link" onClick={() => restablecerPassword(u)}>Restablecer contraseña</button>}
-                  {permisos.archivar && u.estado !== 'archivado' && <button className="btn-link" onClick={() => archivar(u)}>Archivar</button>}
-                  {permisos.restaurar && u.estado === 'archivado' && <button className="btn-link" onClick={() => restaurar(u)}>Restaurar</button>}
-                  {permisos.eliminar && <button className="btn-link danger" onClick={() => eliminar(u)}>Eliminar</button>}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      {multiEmpresa && (
+        <p className="detail-sub" style={{ marginBottom: 10 }}>
+          Con Firebase, cada quien crea y controla su propia contraseña — un administrador no
+          puede restablecerla por otra persona (solo Archivar/Eliminar su acceso).
+        </p>
+      )}
+      <div className="table-scroll">
+        <table className="data-table">
+          <tbody>
+            {visibles.length === 0 ? (
+              <tr><td colSpan={4} className="empty-state">Sin usuarios.</td></tr>
+            ) : (
+              visibles.map((u) => (
+                <tr key={u.id}>
+                  <td>{u.nombre}{u.estado === 'archivado' && <span className="badge badge-sm badge-warn" style={{ marginLeft: 6 }}>Archivado</span>}</td>
+                  <td>{rolPorId[u.rolId] ? rolPorId[u.rolId].nombre : '—'}</td>
+                  <td>{tieneCredencial(u) ? <span className="badge badge-sm badge-ok">Con contraseña</span> : <span className="badge badge-sm badge-warn">Sin contraseña</span>}</td>
+                  <td className="actions-cell">
+                    {permisos.editar && <button className="btn-link" onClick={() => abrirEditar(u)}>Editar</button>}
+                    {permisos.editar && !multiEmpresa && u.passwordHash && <button className="btn-link" onClick={() => restablecerPassword(u)}>Restablecer contraseña</button>}
+                    {permisos.archivar && u.estado !== 'archivado' && <button className="btn-link" onClick={() => archivar(u)}>Archivar</button>}
+                    {permisos.restaurar && u.estado === 'archivado' && <button className="btn-link" onClick={() => restaurar(u)}>Restaurar</button>}
+                    {permisos.eliminar && <button className="btn-link danger" onClick={() => eliminar(u)}>Eliminar</button>}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {editando !== null && (
         <div className="modal-overlay" onClick={() => setEditando(null)}>

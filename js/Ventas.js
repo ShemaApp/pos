@@ -141,19 +141,21 @@ function VentaDetalle({ venta, clienteNombre, onVolver, onCancelar, permisos }) 
         <span className={`badge ${ESTADOS_VENTA[venta.estado].className}`}>{ESTADOS_VENTA[venta.estado].label}</span>
       </p>
 
-      <table className="data-table">
-        <thead><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr></thead>
-        <tbody>
-          {venta.items.map((it, i) => (
-            <tr key={i}>
-              <td>{it.nombre}</td>
-              <td>{it.cantidad}</td>
-              <td>${window.AppUtils.formatMoney(it.precioUnitario)}</td>
-              <td>${window.AppUtils.formatMoney(it.subtotal)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr></thead>
+          <tbody>
+            {venta.items.map((it, i) => (
+              <tr key={i}>
+                <td>{it.nombre}</td>
+                <td>{it.cantidad}</td>
+                <td>${window.AppUtils.formatMoney(it.precioUnitario)}</td>
+                <td>${window.AppUtils.formatMoney(it.subtotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <div className="resumen-grid">
         <div className="resumen-item"><span className="resumen-label">Total</span><span className="resumen-valor">${window.AppUtils.formatMoney(venta.total)}</span></div>
@@ -367,27 +369,29 @@ function VentasModule({ permisos }) {
         <div className="toolbar">
           <button className="btn-secondary" onClick={() => setVista('vender')}>&larr; Volver a vender</button>
         </div>
-        <table className="data-table">
-          <thead><tr><th>Fecha</th><th>Cliente</th><th>Total</th><th>Método</th><th>Estado</th></tr></thead>
-          <tbody>
-            {ventas.length === 0 ? (
-              <tr><td colSpan={5} className="empty-state">Sin ventas todavía.</td></tr>
-            ) : (
-              ventas.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((v) => {
-                const cliente = v.clienteId ? clientePorId[v.clienteId] : null;
-                return (
-                  <tr key={v.id} className="clickable" onClick={() => { setVentaActual(v); setVista('detalle'); }}>
-                    <td>{new Date(v.fecha).toLocaleString('es')}</td>
-                    <td>{cliente ? cliente.nombre : 'Público general'}</td>
-                    <td>${window.AppUtils.formatMoney(v.total)}</td>
-                    <td>{METODOS_PAGO.find((m) => m.key === v.metodoPago)?.label}</td>
-                    <td><span className={`badge ${ESTADOS_VENTA[v.estado].className}`}>{ESTADOS_VENTA[v.estado].label}</span></td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr><th>Fecha</th><th>Cliente</th><th>Total</th><th>Método</th><th>Estado</th></tr></thead>
+            <tbody>
+              {ventas.length === 0 ? (
+                <tr><td colSpan={5} className="empty-state">Sin ventas todavía.</td></tr>
+              ) : (
+                ventas.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((v) => {
+                  const cliente = v.clienteId ? clientePorId[v.clienteId] : null;
+                  return (
+                    <tr key={v.id} className="clickable" onClick={() => { setVentaActual(v); setVista('detalle'); }}>
+                      <td>{new Date(v.fecha).toLocaleString('es')}</td>
+                      <td>{cliente ? cliente.nombre : 'Público general'}</td>
+                      <td>${window.AppUtils.formatMoney(v.total)}</td>
+                      <td>{METODOS_PAGO.find((m) => m.key === v.metodoPago)?.label}</td>
+                      <td><span className={`badge ${ESTADOS_VENTA[v.estado].className}`}>{ESTADOS_VENTA[v.estado].label}</span></td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
@@ -427,31 +431,33 @@ function VentasModule({ permisos }) {
         )}
       </div>
 
-      <table className="data-table">
-        <thead><tr><th>Producto</th><th>Cant.</th><th>Subtotal</th><th></th></tr></thead>
-        <tbody>
-          {carrito.length === 0 ? (
-            <tr><td colSpan={4} className="empty-state">Agrega productos para iniciar la venta.</td></tr>
-          ) : (
-            carrito.map((it) => (
-              <tr key={it.productoId}>
-                <td>{it.nombre}</td>
-                <td>
-                  <input
-                    type="number"
-                    min="1"
-                    value={it.cantidad}
-                    onChange={(e) => cambiarCantidad(it.productoId, Math.max(1, Number(e.target.value) || 1))}
-                    style={{ width: 60 }}
-                  />
-                </td>
-                <td>${window.AppUtils.formatMoney(it.precioUnitario * it.cantidad)}</td>
-                <td className="actions-cell"><button className="btn-link danger" onClick={() => quitarDelCarrito(it.productoId)}>Quitar</button></td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead><tr><th>Producto</th><th>Cant.</th><th>Subtotal</th><th></th></tr></thead>
+          <tbody>
+            {carrito.length === 0 ? (
+              <tr><td colSpan={4} className="empty-state">Agrega productos para iniciar la venta.</td></tr>
+            ) : (
+              carrito.map((it) => (
+                <tr key={it.productoId}>
+                  <td>{it.nombre}</td>
+                  <td>
+                    <input
+                      type="number"
+                      min="1"
+                      value={it.cantidad}
+                      onChange={(e) => cambiarCantidad(it.productoId, Math.max(1, Number(e.target.value) || 1))}
+                      style={{ width: 60 }}
+                    />
+                  </td>
+                  <td>${window.AppUtils.formatMoney(it.precioUnitario * it.cantidad)}</td>
+                  <td className="actions-cell"><button className="btn-link danger" onClick={() => quitarDelCarrito(it.productoId)}>Quitar</button></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <div className="resumen-grid">
         <div className="resumen-item"><span className="resumen-label">Total</span><span className="resumen-valor">${window.AppUtils.formatMoney(total)}</span></div>

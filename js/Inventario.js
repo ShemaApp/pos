@@ -433,52 +433,56 @@ function InventarioModule({ permisos }) {
     ),
 
     React.createElement(
-      'table',
-      { className: 'data-table' },
+      'div',
+      { className: 'table-scroll' },
       React.createElement(
-        'thead',
-        null,
+        'table',
+        { className: 'data-table' },
         React.createElement(
-          'tr',
+          'thead',
           null,
-          React.createElement('th', null, 'Producto'),
-          React.createElement('th', null, 'Código'),
-          React.createElement('th', null, 'Unidad'),
-          React.createElement('th', null, 'Precio'),
-          React.createElement('th', null, 'Existencia'),
-          React.createElement('th', null, 'Estado'),
-          React.createElement('th', null)
-        )
-      ),
-      React.createElement(
-        'tbody',
-        null,
-        visibles.length === 0
-          ? React.createElement('tr', null, React.createElement('td', { colSpan: 7, className: 'empty-state' }, 'No hay productos que coincidan.'))
-          : visibles.map((p) =>
-              React.createElement(
-                'tr',
-                { key: p.id },
-                React.createElement('td', { className: 'clickable', onClick: () => abrirEditar(p) }, p.nombre),
-                React.createElement('td', { className: 'mono' }, p.codigoBarras || '—'),
-                React.createElement('td', null, unidadPorId[p.unidadMedidaId]?.abreviatura || '—'),
-                React.createElement('td', null, '$', window.AppUtils.formatMoney(p.precio)),
-                React.createElement('td', null, p.existencia),
-                React.createElement('td', null, React.createElement('span', { className: `badge ${ESTADOS[p.estado].className}` }, ESTADOS[p.estado].label)),
+          React.createElement(
+            'tr',
+            null,
+            React.createElement('th', null, 'Producto'),
+            React.createElement('th', null, 'Código'),
+            React.createElement('th', null, 'Unidad'),
+            React.createElement('th', null, 'Precio'),
+            React.createElement('th', null, 'Existencia'),
+            React.createElement('th', null, 'Estado'),
+            React.createElement('th', null)
+          )
+        ),
+        React.createElement(
+          'tbody',
+          null,
+          visibles.length === 0
+            ? React.createElement('tr', null, React.createElement('td', { colSpan: 7, className: 'empty-state' }, 'No hay productos que coincidan.'))
+            : visibles.map((p) =>
                 React.createElement(
-                  'td',
-                  { className: 'actions-cell' },
-                  permisosEfectivos.editar && React.createElement('button', { className: 'btn-link', onClick: () => abrirEditar(p) }, 'Editar'),
-                  permisosEfectivos.exportar && p.codigoBarras &&
-                    React.createElement('button', { className: 'btn-link', onClick: () => setEtiquetasFor([p]) }, 'Imprimir'),
-                  permisosEfectivos.archivar && p.estado === 'activo' &&
-                    React.createElement('button', { className: 'btn-link', onClick: () => archivar(p) }, 'Archivar'),
-                  permisosEfectivos.restaurar && p.estado === 'archivado' &&
-                    React.createElement('button', { className: 'btn-link', onClick: () => restaurar(p) }, 'Restaurar'),
-                  permisosEfectivos.eliminar && React.createElement('button', { className: 'btn-link danger', onClick: () => eliminar(p) }, 'Eliminar')
+                  'tr',
+                  { key: p.id },
+                  React.createElement('td', { className: 'clickable', onClick: () => abrirEditar(p) }, p.nombre),
+                  React.createElement('td', { className: 'mono' }, p.codigoBarras || '—'),
+                  React.createElement('td', null, unidadPorId[p.unidadMedidaId]?.abreviatura || '—'),
+                  React.createElement('td', null, '$', window.AppUtils.formatMoney(p.precio)),
+                  React.createElement('td', null, p.existencia),
+                  React.createElement('td', null, React.createElement('span', { className: `badge ${ESTADOS[p.estado].className}` }, ESTADOS[p.estado].label)),
+                  React.createElement(
+                    'td',
+                    { className: 'actions-cell' },
+                    permisosEfectivos.editar && React.createElement('button', { className: 'btn-link', onClick: () => abrirEditar(p) }, 'Editar'),
+                    permisosEfectivos.exportar && p.codigoBarras &&
+                      React.createElement('button', { className: 'btn-link', onClick: () => setEtiquetasFor([p]) }, 'Imprimir'),
+                    permisosEfectivos.archivar && p.estado === 'activo' &&
+                      React.createElement('button', { className: 'btn-link', onClick: () => archivar(p) }, 'Archivar'),
+                    permisosEfectivos.restaurar && p.estado === 'archivado' &&
+                      React.createElement('button', { className: 'btn-link', onClick: () => restaurar(p) }, 'Restaurar'),
+                    permisosEfectivos.eliminar && React.createElement('button', { className: 'btn-link danger', onClick: () => eliminar(p) }, 'Eliminar')
+                  )
                 )
               )
-            )
+        )
       )
     ),
 

@@ -1,16 +1,24 @@
 // db.js — Capa de datos. Dos backends intercambiables detrás de la MISMA
 // interfaz (add/put/get/getAll/getByIndex/getAllByIndex/delete):
-//   - IndexedDB (Store)         → por defecto, 100% local, sin cuenta.
+//   - IndexedDB (Store)         → por defecto, 100% local, sin cuenta, UNA sola
+//     "empresa" implícita (no hay concepto de multiempresa: cada dispositivo
+//     ya está aislado de por sí).
 //   - Firestore (FirestoreStore) → cuando window.FIREBASE_HABILITADO === true.
-// Ningún otro módulo de la app conoce cuál backend está activo: todos llaman
-// a window.AppDB.<coleccion>.<metodo>(...) igual en ambos casos.
+//     Multiempresa real: cada empresa vive en su propia subcolección
+//     (empresas/{empresaId}/productos, .../clientes, etc.), aislada de las
+//     demás. El registro de empresas (nombre + correoEmpresa) vive en la
+//     colección raíz `empresas`.
+// Ningún módulo de la app conoce cuál backend está activo ni si hay
+// multiempresa: todos llaman a window.AppDB.<coleccion>.<metodo>(...) igual
+// en todos los casos — la selección de empresa ocurre antes del login, en
+// App.js/Empresa.js, y solo entonces se "conectan" los stores de datos.
 const DB_NAME = 'inventario-app';
 const DB_VERSION = 5;
 
-// Esquema único: qué campos son índice de búsqueda y cuáles deben ser únicos.
-// Alimenta tanto los createIndex() de IndexedDB como las consultas where() y
-// la validación de unicidad de FirestoreStore — así los dos backends nunca
-// pueden quedar desalineados entre sí.
+// Esquema único de los datos DE UNA EMPRESA: qué campos son índice de
+// búsqueda y cuáles deben ser únicos DENTRO de esa empresa (no globalmente
+// — dos empresas distintas sí pueden repetir, por ejemplo, un mismo
+// codigoBarras entre sí, cada una en su propio espacio).
 const SCHEMA = {
   productos: { codigoBarras: { unique: true }, nombre: {}, estado: {}, categoriaId: {} },
   unidadesMedida: { nombre: { unique: true } },
@@ -23,6 +31,10 @@ const SCHEMA = {
   roles: { nombre: { unique: true } },
   usuarios: { nombre: { unique: true }, rolId: {} },
 };
+
+// Esquema del registro de empresas (nivel raíz, no anidado — es lo único
+// que NO pertenece a ninguna empresa, porque es el directorio de todas).
+const SCHEMA_EMPRESAS = { correoEmpresa: { unique: true } };
 
 const UNIDADES_DEFAULT = [
   { nombre: 'Pieza', abreviatura: 'pza' },
@@ -39,6 +51,9 @@ const UNIDADES_DEFAULT = [
 ];
 
 // ============================== IndexedDB ==============================
+// Sin cambios de fondo respecto a la versión anterior: sigue siendo una
+// sola base local, sin noción de "empresa". Multiempresa es, por diseño,
+// una capacidad exclusiva del backend Firestore (ver más abajo).
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -54,7 +69,6 @@ function openDatabase() {
         }
       }
       if (!db.objectStoreNames.contains('ajustes')) {
-        // Clave-valor genérico. Se usa para 'modulosActivos' (on/off por módulo).
         db.createObjectStore('ajustes', { keyPath: 'clave' });
       }
     };
@@ -76,8 +90,6 @@ class Store {
 
   add(obj) {
     return new Promise((resolve, reject) => {
-      // No incluir codigoBarras si está vacío: así el índice único no choca
-      // entre varios productos sin código (IndexedDB no indexa claves undefined).
       const clean = { ...obj };
       if (!clean.codigoBarras) delete clean.codigoBarras;
       const req = this._tx('readwrite').add(clean);
@@ -120,8 +132,6 @@ class Store {
     });
   }
 
-  // Todas las filas cuyo índice coincide con value (a diferencia de getByIndex,
-  // que asume un índice único y regresa solo una).
   getAllByIndex(indexName, value) {
     return new Promise((resolve, reject) => {
       const req = this._tx('readonly').index(indexName).getAll(value);
@@ -140,26 +150,25 @@ class Store {
 }
 
 // ============================== Firestore ==============================
-// Requiere que se hayan cargado firebase-app-compat.js y firebase-firestore-compat.js
-// (y firebase-auth-compat.js para la auth anónima) antes de este archivo, y que
-// window.FIREBASE_CONFIG / window.FIREBASE_HABILITADO estén definidos (ver
-// firebase-config.js). IDs: se generan numéricos vía un contador transaccional
-// en _contadores/<coleccion>, para que sean intercambiables con los IDs de
-// IndexedDB y no rompan los `Number(...)` que usa el resto de la app.
+// FirestoreStore ya NO asume una ruta fija: recibe la referencia de
+// colección (ya construida, anidada o no) y la de contadores. Así el MISMO
+// código sirve para la colección raíz `empresas` (sin anidar) y para las
+// colecciones de datos DENTRO de una empresa (anidadas bajo
+// empresas/{empresaId}/...) — quien decide la ruta es crearFirestoreStore(),
+// no esta clase.
 
 class FirestoreStore {
-  constructor(firestoreDb, nombre, indices) {
+  constructor(firestoreDb, coleccionRef, contadoresRef, nombre, indices, opciones) {
     this._firestoreDb = firestoreDb;
-    this.col = firestoreDb.collection(nombre);
+    this.col = coleccionRef;
+    this.contadorRef = contadoresRef.doc(nombre);
     this.indices = indices || {};
-    this.contadorRef = firestoreDb.collection('_contadores').doc(nombre);
+    this.idAleatorio = !!(opciones && opciones.idAleatorio);
   }
 
   _limpiar(obj) {
     const clean = { ...obj };
     if (!clean.codigoBarras) delete clean.codigoBarras;
-    // Firestore no acepta el valor `undefined` en un campo (a diferencia de
-    // IndexedDB, que lo tolera igual que "ausente") — hay que quitarlos.
     Object.keys(clean).forEach((k) => {
       if (clean[k] === undefined) delete clean[k];
     });
@@ -192,7 +201,11 @@ class FirestoreStore {
   async add(obj) {
     const datos = this._limpiar(obj);
     await this._verificarUnicidad(datos, undefined);
-    const id = await this._siguienteId();
+    // ID aleatorio (colección `empresas`, para que su ID no sea adivinable
+    // por fuerza bruta) o numérico consecutivo (colecciones de datos DENTRO
+    // de una empresa, para no romper los Number(...) que usa el resto de la
+    // app en selects de cliente/categoría/rol/etc).
+    const id = this.idAleatorio ? this.col.doc().id : await this._siguienteId();
     datos.id = id;
     await this.col.doc(String(id)).set(datos);
     return id;
@@ -231,11 +244,9 @@ class FirestoreStore {
   }
 }
 
-// 'ajustes' usa 'clave' como llave directa (no numérica, no autoincrement),
-// igual que su equivalente de IndexedDB (keyPath: 'clave').
 class FirestoreAjustesStore {
-  constructor(firestoreDb) {
-    this.col = firestoreDb.collection('ajustes');
+  constructor(coleccionRef) {
+    this.col = coleccionRef;
   }
   async get(clave) {
     const snap = await this.col.doc(clave).get();
@@ -258,18 +269,36 @@ class FirestoreAjustesStore {
   }
 }
 
+// baseRef puede ser el propio firestoreDb (para colecciones raíz, como
+// `empresas`) o la referencia a UN documento de empresa (para anidar sus
+// colecciones de datos debajo) — ambos exponen .collection(nombre), así que
+// el mismo helper sirve para los dos casos.
+function crearFirestoreStore(firestoreDb, baseRef, nombre, indices, opciones) {
+  return new FirestoreStore(firestoreDb, baseRef.collection(nombre), baseRef.collection('_contadores'), nombre, indices, opciones);
+}
+
+function crearFirestoreAjustesStore(baseRef) {
+  return new FirestoreAjustesStore(baseRef.collection('ajustes'));
+}
+
 // ================================ DB ====================================
 
 class DB {
   async init() {
-    if (window.FIREBASE_HABILITADO) {
-      await this._initFirestore();
+    this.multiEmpresa = !!window.FIREBASE_HABILITADO;
+    if (this.multiEmpresa) {
+      await this._initFirestoreBase();
+      // OJO: en modo Firestore, aquí TERMINA init(). Todavía no hay ninguna
+      // empresa elegida, así que los stores de datos (productos, clientes...)
+      // no existen hasta llamar a entrarEnEmpresa(empresaId) — eso lo hace
+      // Empresa.js/App.js después de que la persona elige o registra su
+      // empresa, antes de mostrar la pantalla de "elige tu usuario".
     } else {
       await this._initIndexedDB();
+      await this._seedUnidades();
+      await this._seedRolesYUsuarios();
+      await this._seedAjustes();
     }
-    await this._seedUnidades();
-    await this._seedRolesYUsuarios();
-    await this._seedAjustes();
     return this;
   }
 
@@ -281,39 +310,119 @@ class DB {
     this.ajustes = new Store(this.db, 'ajustes');
   }
 
-  async _initFirestore() {
+  async _initFirestoreBase() {
     firebase.initializeApp(window.FIREBASE_CONFIG);
-
-    // Auth anónima: sin esto, cualquiera que abra las herramientas de
-    // desarrollador y conozca el firebaseConfig público podría leer/escribir
-    // la base directo, sin pasar por la app. No sustituye el rol/permiso de
-    // cada usuario dentro de la app — solo exige "eres un cliente válido".
-    await new Promise((resolve, reject) => {
-      let cancelar;
-      cancelar = firebase.auth().onAuthStateChanged((user) => {
-        if (user) {
-          if (cancelar) cancelar();
-          resolve(user);
-        }
-      }, reject);
-      firebase.auth().signInAnonymously().catch(reject);
-    });
 
     const firestoreDb = firebase.firestore();
     try {
       await firestoreDb.enablePersistence({ synchronizeTabs: true });
     } catch (e) {
-      // No soportado (navegador viejo) o hay otra pestaña sin sincronizar — no es fatal.
       console.warn('Persistencia offline de Firestore no disponible:', e && e.message);
     }
-
     this._firestoreDb = firestoreDb;
-    for (const [nombre, indices] of Object.entries(SCHEMA)) {
-      this[nombre] = new FirestoreStore(firestoreDb, nombre, indices);
+
+    // Si ya había una sesión (anónima o real) de una visita anterior en este
+    // dispositivo, Firebase la restaura sola — no hay que pisarla con una
+    // nueva sesión anónima. Solo si de verdad no hay ninguna (primera vez
+    // aquí) se crea una anónima, para poder buscar empresas por correo.
+    const usuarioExistente = await new Promise((resolve, reject) => {
+      let cancelar;
+      cancelar = firebase.auth().onAuthStateChanged((user) => {
+        // onAuthStateChanged puede llamar a este callback de forma SÍNCRONA
+        // en el mismo instante en que se registra — en ese caso `cancelar`
+        // todavía no terminó de asignarse (es el valor que ESTA MISMA
+        // llamada va a devolver). Desuscribirse en un microtask asegura que
+        // la asignación ya haya terminado para entonces, incluso en ese
+        // primer disparo síncrono — si no, el listener se queda pegado para
+        // siempre.
+        Promise.resolve().then(() => { if (cancelar) cancelar(); });
+        resolve(user);
+      }, reject);
+    });
+    if (!usuarioExistente) {
+      await this._esperarSesion(() => firebase.auth().signInAnonymously());
     }
-    this.ajustes = new FirestoreAjustesStore(firestoreDb);
+
+    this.empresas = crearFirestoreStore(firestoreDb, firestoreDb, 'empresas', SCHEMA_EMPRESAS, { idAleatorio: true });
+    this.empresaActualId = null;
   }
 
+  // Conecta los stores de datos de UNA empresa específica (Firestore). Solo
+  // construye las referencias — no siembra ni escribe nada todavía, porque
+  // en este punto normalmente aún no hay una sesión autorizada (ver
+  // autorizarSesionActual). En modo IndexedDB no hace nada.
+  async entrarEnEmpresa(empresaId) {
+    if (!this.multiEmpresa) return;
+    const empresaRef = this._firestoreDb.collection('empresas').doc(String(empresaId));
+    for (const [nombre, indices] of Object.entries(SCHEMA)) {
+      this[nombre] = crearFirestoreStore(this._firestoreDb, empresaRef, nombre, indices);
+    }
+    this.ajustes = crearFirestoreAjustesStore(empresaRef);
+    this.empresaActualId = empresaId;
+  }
+
+  // Se llama justo después de que la sesión actual de Firebase Auth pasa a
+  // ser REAL (createUserWithEmailAndPassword o signInWithEmailAndPassword
+  // exitosos, no anónima) — ver js/auth.js. Escribe el documento que
+  // firestore.rules exige para conceder acceso al resto de los datos de la
+  // empresa, y siembra los valores por defecto la primera vez (idempotente:
+  // no hace nada si ya existían). En modo IndexedDB no hace nada.
+  async autorizarSesionActual() {
+    if (!this.multiEmpresa || !this.empresaActualId) return;
+    const uid = firebase.auth().currentUser && firebase.auth().currentUser.uid;
+    if (!uid) return;
+    await this._firestoreDb
+      .collection('empresas').doc(String(this.empresaActualId))
+      .collection('autorizados').doc(uid)
+      .set({ fecha: new Date().toISOString() });
+
+    await this._seedUnidades();
+    await this._seedAjustes();
+    await this._seedRolAdministrador();
+  }
+
+  // Cierra la sesión real actual (si la hay) y vuelve a una sesión anónima —
+  // necesario al "Cambiar usuario" o "Cambiar empresa", porque Firebase Auth
+  // solo mantiene una identidad activa a la vez: para que la siguiente
+  // persona pueda intentar SU contraseña, hay que soltar la cuenta actual
+  // primero. En modo IndexedDB no hace nada.
+  async volverAAnonimo() {
+    if (!this.multiEmpresa) return;
+    await firebase.auth().signOut();
+    await this._esperarSesion(() => firebase.auth().signInAnonymously());
+  }
+
+  // Espera a que onAuthStateChanged confirme una sesión (después de disparar
+  // la acción que la inicia) y resuelve con ese usuario. Misma precaución
+  // que arriba: el listener se desuscribe en un microtask, no en el mismo
+  // tick síncrono, para no quedar pegado si llega a dispararse de entrada.
+  _esperarSesion(iniciarSesion) {
+    return new Promise((resolve, reject) => {
+      let cancelar;
+      cancelar = firebase.auth().onAuthStateChanged((user) => {
+        if (user) {
+          Promise.resolve().then(() => { if (cancelar) cancelar(); });
+          resolve(user);
+        }
+      }, reject);
+      iniciarSesion().catch(reject);
+    });
+  }
+
+  // --- Sembrado de valores por defecto ---
+
+  // Solo el ROL Administrador (modo Firestore multiempresa): el primer
+  // usuario de una empresa nueva lo crea explícitamente quien se registra
+  // (ver Empresa.js), con su propio nombre y contraseña — nadie queda con
+  // una cuenta "admin" genérica y sin dueño.
+  async _seedRolAdministrador() {
+    const roles = await this.roles.getAll();
+    if (roles.some((r) => r.esSistema)) return;
+    await this.roles.add({ nombre: 'Administrador', permisos: window.AppPermisos.permisosCompletos(), esSistema: true });
+  }
+
+  // Rol Administrador + usuario 'admin' (modo IndexedDB, un solo espacio
+  // local — aquí sí tiene sentido un usuario semilla, como antes).
   async _seedRolesYUsuarios() {
     const roles = await this.roles.getAll();
     let admin = roles.find((r) => r.esSistema);

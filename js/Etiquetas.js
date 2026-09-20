@@ -90,24 +90,26 @@ function EtiquetasModal({ productos, onClose }) {
             </div>
 
             <h4 className="section-title">Cantidad por producto</h4>
-            <table className="data-table">
-              <tbody>
-                {conCodigo.map((p) => (
-                  <tr key={p.id}>
-                    <td>{p.nombre} <span className="mono">({p.codigoBarras})</span></td>
-                    <td style={{ width: 90 }}>
-                      <input
-                        type="number"
-                        min="0"
-                        max="200"
-                        value={cantidades[p.id] ?? 1}
-                        onChange={(e) => setCantidades({ ...cantidades, [p.id]: e.target.value })}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="data-table">
+                <tbody>
+                  {conCodigo.map((p) => (
+                    <tr key={p.id}>
+                      <td>{p.nombre} <span className="mono">({p.codigoBarras})</span></td>
+                      <td style={{ width: 90 }}>
+                        <input
+                          type="number"
+                          min="0"
+                          max="200"
+                          value={cantidades[p.id] ?? 1}
+                          onChange={(e) => setCantidades({ ...cantidades, [p.id]: e.target.value })}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </React.Fragment>
         )}
 

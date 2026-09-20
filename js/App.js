@@ -1,8 +1,12 @@
-// App.js — Sesión: elegir usuario -> verificar o crear contraseña -> permisos
-// por rol -> navegación entre módulos visibles. Incluye "Cambiar mi contraseña".
+// App.js — Sesión completa: (si Firebase) elegir/crear empresa -> elegir
+// usuario -> verificar o crear contraseña -> permisos por rol -> navegación.
+// En modo Firebase, la contraseña la verifica Firebase Auth de verdad
+// (ver js/auth.js); en modo IndexedDB local sigue el hash propio de
+// siempre. Ambos casos comparten la misma interfaz de arriba hacia abajo.
 const { useState, useEffect } = React;
 
 const USUARIO_KEY = 'inventario-app:usuarioId';
+const EMPRESA_KEY = 'inventario-app:empresaId';
 
 function LoginScreen({ usuarios, onSeleccionar }) {
   const activos = usuarios.filter((u) => u.estado === 'activo').sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -27,34 +31,58 @@ function LoginScreen({ usuarios, onSeleccionar }) {
   );
 }
 
-function AccesoUsuario({ usuario, onAutenticado, onVolver }) {
+function AccesoUsuario({ usuario, empresaActual, onAutenticado, onVolver }) {
   const [password, setPassword] = useState('');
   const [confirmar, setConfirmar] = useState('');
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
-  const tienePassword = !!usuario.passwordHash;
+
+  const multiEmpresa = window.AppDB.multiEmpresa;
+  const tieneCredencial = multiEmpresa ? !!usuario.tieneCuenta : !!usuario.passwordHash;
 
   const entrar = async () => {
     setError('');
     if (!password) { setError('Ingresa tu contraseña.'); return; }
     setCargando(true);
-    const ok = await window.AppAuth.verificarPassword(password, usuario);
-    setCargando(false);
-    if (!ok) { setError('Contraseña incorrecta.'); return; }
-    onAutenticado(usuario);
+    if (multiEmpresa) {
+      const uid = await window.AppAuth.entrarConFirebase(empresaActual.id, usuario.nombre, password);
+      if (!uid) { setCargando(false); setError('Contraseña incorrecta.'); return; }
+      await window.AppDB.autorizarSesionActual();
+      setCargando(false);
+      onAutenticado(usuario);
+    } else {
+      const ok = await window.AppAuth.verificarPassword(password, usuario);
+      setCargando(false);
+      if (!ok) { setError('Contraseña incorrecta.'); return; }
+      onAutenticado(usuario);
+    }
   };
 
   const crearPassword = async () => {
     setError('');
-    if (password.length < 4) { setError('La contraseña debe tener al menos 4 caracteres.'); return; }
+    if (password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres.'); return; }
     if (password !== confirmar) { setError('Las contraseñas no coinciden.'); return; }
     setCargando(true);
-    const credenciales = await window.AppAuth.crearCredenciales(password);
-    const actualizado = { ...usuario, ...credenciales };
-    await window.AppDB.usuarios.put(actualizado);
-    await window.AppMovimientos.registrar('configuracion', 'password_creada', { entidadId: usuario.id, entidadNombre: usuario.nombre });
-    setCargando(false);
-    onAutenticado(actualizado);
+    try {
+      if (multiEmpresa) {
+        await window.AppAuth.crearCuentaFirebase(empresaActual.id, usuario.nombre, password);
+        await window.AppDB.autorizarSesionActual();
+        const actualizado = { ...usuario, tieneCuenta: true };
+        await window.AppDB.usuarios.put(actualizado);
+        setCargando(false);
+        onAutenticado(actualizado);
+      } else {
+        const credenciales = await window.AppAuth.crearCredenciales(password);
+        const actualizado = { ...usuario, ...credenciales };
+        await window.AppDB.usuarios.put(actualizado);
+        await window.AppMovimientos.registrar('configuracion', 'password_creada', { entidadId: usuario.id, entidadNombre: usuario.nombre });
+        setCargando(false);
+        onAutenticado(actualizado);
+      }
+    } catch (e) {
+      setError(e.message || 'No se pudo crear tu cuenta.');
+      setCargando(false);
+    }
   };
 
   return (
@@ -64,7 +92,7 @@ function AccesoUsuario({ usuario, onAutenticado, onVolver }) {
         <h2>{usuario.nombre}</h2>
         {error && <p className="error-text">{error}</p>}
 
-        {tienePassword ? (
+        {tieneCredencial ? (
           <React.Fragment>
             <p className="detail-sub">Ingresa tu contraseña.</p>
             <label className="field">
@@ -107,7 +135,7 @@ function AccesoUsuario({ usuario, onAutenticado, onVolver }) {
   );
 }
 
-function CambiarPasswordModal({ usuario, onCerrado }) {
+function CambiarPasswordModal({ usuario, empresaActual, onCerrado }) {
   const [actual, setActual] = useState('');
   const [nueva, setNueva] = useState('');
   const [confirmar, setConfirmar] = useState('');
@@ -116,16 +144,25 @@ function CambiarPasswordModal({ usuario, onCerrado }) {
 
   const guardar = async () => {
     setError('');
-    const ok = await window.AppAuth.verificarPassword(actual, usuario);
-    if (!ok) { setError('Tu contraseña actual no es correcta.'); return; }
-    if (nueva.length < 4) { setError('La nueva contraseña debe tener al menos 4 caracteres.'); return; }
+    if (nueva.length < 6) { setError('La nueva contraseña debe tener al menos 6 caracteres.'); return; }
     if (nueva !== confirmar) { setError('Las contraseñas nuevas no coinciden.'); return; }
     setCargando(true);
-    const credenciales = await window.AppAuth.crearCredenciales(nueva);
-    await window.AppDB.usuarios.put({ ...usuario, ...credenciales });
-    await window.AppMovimientos.registrar('configuracion', 'password_cambiada', { entidadId: usuario.id, entidadNombre: usuario.nombre });
-    setCargando(false);
-    onCerrado(true);
+    try {
+      if (window.AppDB.multiEmpresa) {
+        await window.AppAuth.cambiarPasswordFirebase(empresaActual.id, usuario.nombre, actual, nueva);
+      } else {
+        const ok = await window.AppAuth.verificarPassword(actual, usuario);
+        if (!ok) throw new Error('Tu contraseña actual no es correcta.');
+        const credenciales = await window.AppAuth.crearCredenciales(nueva);
+        await window.AppDB.usuarios.put({ ...usuario, ...credenciales });
+      }
+      await window.AppMovimientos.registrar('configuracion', 'password_cambiada', { entidadId: usuario.id, entidadNombre: usuario.nombre });
+      setCargando(false);
+      onCerrado(true);
+    } catch (e) {
+      setError(e.message || 'No se pudo cambiar la contraseña.');
+      setCargando(false);
+    }
   };
 
   return (
@@ -150,6 +187,7 @@ function App() {
   const [listo, setListo] = useState(false);
   const [tab, setTab] = useState('ventas');
   const [contextoCreditos, setContextoCreditos] = useState(null);
+  const [empresaActual, setEmpresaActual] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
   const [roles, setRoles] = useState([]);
   const [modulosActivos, setModulosActivos] = useState({});
@@ -158,23 +196,64 @@ function App() {
   const [cambiarPasswordAbierto, setCambiarPasswordAbierto] = useState(false);
   const [mensaje, setMensaje] = useState('');
 
-  const cargarSesion = async () => {
-    const [u, r, ajustes] = await Promise.all([
-      window.AppDB.usuarios.getAll(),
+  // Solo lee la lista de usuarios (nombre/rol) — es lo único legible antes
+  // de autenticarse de verdad, para poder mostrar la pantalla "¿quién eres?".
+  const cargarUsuarios = async () => {
+    const u = await window.AppDB.usuarios.getAll();
+    setUsuarios(u);
+    return u;
+  };
+
+  // Roles y ajustes SÍ requieren estar ya autorizados (ver firestore.rules) —
+  // solo se cargan después de un login real.
+  const cargarPermisosYAjustes = async () => {
+    const [r, ajustes] = await Promise.all([
       window.AppDB.roles.getAll(),
       window.AppDB.ajustes.get('modulosActivos'),
     ]);
-    setUsuarios(u);
     setRoles(r);
     setModulosActivos(ajustes ? ajustes.valor : {});
-
-    const guardadoId = Number(localStorage.getItem(USUARIO_KEY));
-    const encontrado = u.find((x) => x.id === guardadoId && x.estado === 'activo');
-    setUsuarioActual(encontrado || null);
   };
 
   useEffect(() => {
-    window.AppDB.init().then(() => cargarSesion()).then(() => setListo(true));
+    (async () => {
+      await window.AppDB.init();
+
+      if (window.AppDB.multiEmpresa) {
+        const empresaIdGuardada = localStorage.getItem(EMPRESA_KEY);
+        if (empresaIdGuardada) {
+          const empresa = await window.AppDB.empresas.get(empresaIdGuardada);
+          if (empresa && empresa.estado !== 'suspendida') {
+            await window.AppDB.entrarEnEmpresa(empresa.id);
+            setEmpresaActual(empresa);
+            const u = await cargarUsuarios();
+
+            // Si Firebase ya restauró sola una sesión REAL (no anónima) de
+            // una visita anterior, no hay que volver a pedir contraseña.
+            const real = firebase.auth().currentUser && !firebase.auth().currentUser.isAnonymous;
+            if (real) {
+              const guardadoId = Number(localStorage.getItem(USUARIO_KEY));
+              const encontrado = u.find((x) => x.id === guardadoId && x.estado === 'activo');
+              if (encontrado) {
+                await cargarPermisosYAjustes();
+                setUsuarioActual(encontrado);
+              }
+            }
+          } else {
+            localStorage.removeItem(EMPRESA_KEY);
+          }
+        }
+      } else {
+        await cargarUsuarios();
+        await cargarPermisosYAjustes();
+        const guardadoId = Number(localStorage.getItem(USUARIO_KEY));
+        const usuariosLocales = await window.AppDB.usuarios.getAll();
+        const encontrado = usuariosLocales.find((x) => x.id === guardadoId && x.estado === 'activo');
+        setUsuarioActual(encontrado || null);
+      }
+
+      setListo(true);
+    })();
   }, []);
 
   const rolActual = roles.find((r) => r.id === (usuarioActual && usuarioActual.rolId));
@@ -193,23 +272,54 @@ function App() {
     return React.createElement('div', { className: 'loading-screen' }, 'Cargando...');
   }
 
-  const entrar = (usuarioAutenticado) => {
+  const entrar = async (usuarioAutenticado) => {
     localStorage.setItem(USUARIO_KEY, String(usuarioAutenticado.id));
+    if (window.AppDB.multiEmpresa) {
+      await window.AppDB.autorizarSesionActual(); // idempotente; ya se hizo antes, pero no está de más
+    }
+    await cargarPermisosYAjustes();
     setUsuarioActual(usuarioAutenticado);
     setUsuarioSeleccionado(null);
-    cargarSesion();
   };
 
-  const salir = () => {
+  const salir = async () => {
     localStorage.removeItem(USUARIO_KEY);
     setUsuarioActual(null);
     setUsuarioSeleccionado(null);
+    if (window.AppDB.multiEmpresa) {
+      await window.AppDB.volverAAnonimo();
+    }
   };
+
+  const salirDeEmpresa = async () => {
+    localStorage.removeItem(USUARIO_KEY);
+    localStorage.removeItem(EMPRESA_KEY);
+    setUsuarioActual(null);
+    setUsuarioSeleccionado(null);
+    setEmpresaActual(null);
+    if (window.AppDB.multiEmpresa) {
+      await window.AppDB.volverAAnonimo();
+    }
+  };
+
+  const onEmpresaLista = async (empresa, usuarioAutoLogin) => {
+    localStorage.setItem(EMPRESA_KEY, String(empresa.id));
+    setEmpresaActual(empresa);
+    await cargarUsuarios();
+    if (usuarioAutoLogin) {
+      await entrar(usuarioAutoLogin);
+    }
+  };
+
+  if (window.AppDB.multiEmpresa && !empresaActual) {
+    return React.createElement(window.SeleccionarEmpresaScreen, { onEmpresaLista });
+  }
 
   if (!usuarioActual) {
     if (usuarioSeleccionado) {
       return React.createElement(AccesoUsuario, {
         usuario: usuarioSeleccionado,
+        empresaActual,
         onAutenticado: entrar,
         onVolver: () => setUsuarioSeleccionado(null),
       });
@@ -242,7 +352,7 @@ function App() {
   } else if (tab === 'reportes') {
     modulo = React.createElement(window.ReportesModule, { permisos: permisos.reportes });
   } else if (tab === 'configuracion') {
-    modulo = React.createElement(window.ConfiguracionModule, { permisos: permisos.configuracion, onCambio: cargarSesion });
+    modulo = React.createElement(window.ConfiguracionModule, { permisos: permisos.configuracion, onCambio: cargarPermisosYAjustes });
   }
 
   const etiquetaTab = (m) => window.AppPermisos.MODULOS_APP_LABELS[m];
@@ -257,13 +367,21 @@ function App() {
       React.createElement(
         'div',
         { className: 'app-header-top' },
-        React.createElement('h1', null, 'Inventario'),
+        React.createElement(
+          'div',
+          null,
+          React.createElement('h1', null, 'Inventario'),
+          window.AppDB.multiEmpresa && empresaActual &&
+            React.createElement('span', { style: { fontSize: '0.78rem', color: '#C9DBD9' } }, empresaActual.nombre)
+        ),
         React.createElement(
           'div',
           { className: 'header-usuario' },
           React.createElement('span', null, usuarioActual.nombre),
           React.createElement('button', { className: 'btn-link header-salir', onClick: () => setCambiarPasswordAbierto(true) }, 'Cambiar contraseña'),
-          React.createElement('button', { className: 'btn-link header-salir', onClick: salir }, 'Cambiar usuario')
+          React.createElement('button', { className: 'btn-link header-salir', onClick: salir }, 'Cambiar usuario'),
+          window.AppDB.multiEmpresa &&
+            React.createElement('button', { className: 'btn-link header-salir', onClick: salirDeEmpresa }, 'Cambiar empresa')
         )
       ),
       React.createElement(
@@ -278,6 +396,7 @@ function App() {
     cambiarPasswordAbierto &&
       React.createElement(CambiarPasswordModal, {
         usuario: usuarioActual,
+        empresaActual,
         onCerrado: (exito) => {
           setCambiarPasswordAbierto(false);
           if (exito) flash('Contraseña actualizada.');
